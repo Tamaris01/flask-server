@@ -1,19 +1,21 @@
-# Gunakan image Python yang lebih kecil dan ringan sebagai base image
+# Gunakan image python resmi
 FROM python:3.12-slim
 
-# Install dependencies sistem yang diperlukan oleh OpenCV dan pustaka lainnya
-RUN apt-get update && \
-    apt-get install -y libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender1 && \
-    rm -rf /var/lib/apt/lists/*
+# Install dependensi untuk OpenCV
+RUN apt-get update && apt-get install -y \
+    libgl1 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
 
-# Set direktori kerja di dalam container
+# Atur direktori kerja
 WORKDIR /app
 
-# Salin file aplikasi ke dalam direktori /app di dalam container
-COPY . /app
+# Copy semua file ke dalam container
+COPY . .
 
-# Install dependensi Python dari file requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+# Install dependensi Python
+RUN pip install --upgrade pip
+RUN pip install -r requirements.txt
 
-# Tentukan perintah yang akan dijalankan untuk menjalankan aplikasi
-CMD ["python3", "app.py"]
+# Jalankan Flask pakai Gunicorn
+CMD ["gunicorn", "-w", "3", "-b", "0.0.0.0:5000", "app:app"]
