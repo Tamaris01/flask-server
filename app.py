@@ -26,6 +26,7 @@ lock = threading.Lock()
 def detect_loop():
     global raw_frame, display_frame, result_text
     last_result = "-"
+    print("[INFO] Detection loop started.")  # <-- Tambahan log
     while True:
         with lock:
             frame_copy = raw_frame.copy() if raw_frame is not None else None
@@ -67,9 +68,11 @@ def upload_frame():
         with lock:
             raw_frame = frame
 
+        print("[INFO] Frame uploaded and stored.")
         return jsonify({'message': 'Frame received and processed successfully'}), 200
 
     except Exception as e:
+        print(f"[ERROR] upload_frame: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/get_processed_frame', methods=['GET'])
@@ -97,6 +100,9 @@ def check_plate(plat_nomor):
     except requests.exceptions.RequestException as e:
         return {"error": str(e), "exists": False}
 
+# 👇 INI DIPINDAH KE LUAR AGAR BERJALAN DI GUNICORN
+threading.Thread(target=detect_loop, daemon=True).start()
+
+# Opsional untuk development, aman dibiarkan begini
 if __name__ == '__main__':
-    threading.Thread(target=detect_loop, daemon=True).start()
     app.run(host='0.0.0.0', port=5000, debug=False)
