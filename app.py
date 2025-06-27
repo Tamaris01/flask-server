@@ -11,7 +11,7 @@ import threading
 from queue import Queue, Empty
 from detect_plate import detect_plate_image
 
-app = FastAPI()
+app = FastAPI(root_path="/server")
 
 # Allow CORS
 app.add_middleware(
