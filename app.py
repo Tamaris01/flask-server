@@ -1,124 +1,102 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from flask import Flask, jsonify, request
+from flask_cors import CORS
 import requests
 import base64
 import cv2
-import numpy as np
 import os
 import threading
-from queue import Queue, Empty
+import time
+import numpy as np
 from detect_plate import detect_plate_image
 
-app = FastAPI(root_path="/server")
+app = Flask(__name__)
+CORS(app)
 
-# Allow CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Model path check
 MODEL_PATH = os.path.join(os.path.dirname(__file__), 'best.pt')
 if not os.path.exists(MODEL_PATH):
     raise FileNotFoundError(f"❌ Model not found at: {MODEL_PATH}")
 
-# Queue for frames (maxsize=1 to avoid backlog)
-frame_queue = Queue(maxsize=1)
-
-# Shared states
+# Global state
+raw_frame = None
 display_frame = None
 result_text = "-"
 lock = threading.Lock()
 
-# Image input model
-class FrameUpload(BaseModel):
-    image: str
+# Thread loop for real-time detection
+def detect_loop():
+    global raw_frame, display_frame, result_text
+    last_result = "-"
+    while True:
+        with lock:
+            frame_copy = raw_frame.copy() if raw_frame is not None else None
 
-# Convert OpenCV frame to base64
+        if frame_copy is not None:
+            try:
+                det_frame, ocr_text = detect_plate_image(frame_copy, MODEL_PATH)
+                with lock:
+                    display_frame = det_frame
+                    if ocr_text != "-" and ocr_text != last_result:
+                        result_text = ocr_text
+                        last_result = ocr_text
+                        print(f"[INFO] Detected: {ocr_text}")
+            except Exception as e:
+                print(f"[ERROR] Detection failed: {e}")
+        
+        time.sleep(0.1)
+
 def frame_to_base64(frame):
     _, buffer = cv2.imencode('.jpg', frame)
-    encoded = base64.b64encode(buffer).decode('utf-8')
-    return f"data:image/jpeg;base64,{encoded}"
+    encoded_frame = base64.b64encode(buffer).decode('utf-8')
+    return f"data:image/jpeg;base64,{encoded_frame}"
 
-# Detection loop thread
-def detect_loop():
-    global display_frame, result_text
-    last_result = "-"
-    print("[INFO] Detection loop started.")
-
-    while True:
-        try:
-            frame = frame_queue.get(timeout=1)  # block until frame available
-            det_frame, ocr_text = detect_plate_image(frame, MODEL_PATH)
-
-            with lock:
-                display_frame = det_frame
-                if ocr_text != "-" and ocr_text != last_result:
-                    result_text = ocr_text
-                    last_result = ocr_text
-                    print(f"[INFO] Detected: {ocr_text}")
-
-            frame_queue.task_done()
-
-        except Empty:
-            continue  # No frame in queue, loop again
-        except Exception as e:
-            print(f"[ERROR] Detection failed: {e}")
-
-@app.post("/upload_frame")
-async def upload_frame(data: FrameUpload):
+@app.route('/upload_frame', methods=['POST'])
+def upload_frame():
+    global raw_frame
     try:
-        if not data.image:
-            return JSONResponse(content={"error": "No image provided"}, status_code=400)
+        data = request.get_json()
+        if 'image' not in data:
+            return jsonify({'error': 'No image provided'}), 400
 
-        img_data = data.image.split(',')[1]
-        img_array = np.frombuffer(base64.b64decode(img_data), np.uint8)
+        image_data = data['image'].split(',')[1]
+        img_array = np.frombuffer(base64.b64decode(image_data), np.uint8)
         frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
 
         if frame is None:
-            return JSONResponse(content={"error": "Failed to decode image"}, status_code=400)
+            return jsonify({'error': 'Failed to decode image'}), 400
 
-        frame = cv2.resize(frame, (640, 480))
+        with lock:
+            raw_frame = frame
 
-        # Put frame into queue if empty, else reject to avoid overload
-        if frame_queue.full():
-            return JSONResponse(content={"error": "Server is busy, try again"}, status_code=429)
-        else:
-            frame_queue.put(frame)
-            print("[INFO] Frame received for processing.")
-            return {"message": "Frame received successfully"}
+        return jsonify({'message': 'Frame received and processed successfully'}), 200
 
     except Exception as e:
-        print(f"[ERROR] upload_frame: {e}")
-        return JSONResponse(content={"error": str(e)}, status_code=500)
+        return jsonify({'error': str(e)}), 500
 
-@app.get("/get_processed_frame")
-async def get_processed_frame():
+@app.route('/get_processed_frame', methods=['GET'])
+def get_processed_frame():
     with lock:
         if display_frame is None:
-            return JSONResponse(content={"error": "No frame to send"}, status_code=400)
-        return {"frame": frame_to_base64(display_frame)}
+            return jsonify({'error': 'No frame to send'}), 400
 
-@app.get("/result")
-async def get_result():
+        processed_frame_base64 = frame_to_base64(display_frame)
+        return jsonify({'frame': processed_frame_base64})
+
+@app.route('/result', methods=['GET'])
+def result():
     with lock:
-        return {"plat_nomor": result_text}
+        return jsonify({'plat_nomor': result_text})
 
-@app.get("/check_plate/{plat_nomor}")
-async def check_plate(plat_nomor: str):
+@app.route('/check_plate/<plat_nomor>', methods=['GET'])
+def check_plate(plat_nomor):
     try:
-        response = requests.get(f"https://alpu.web.id/api/check_plate/{plat_nomor}", timeout=5)
+        response = requests.get(f'https://alpu.web.id/api/check_plate/{plat_nomor}')
         if response.status_code == 200:
             return response.json()
         else:
             return {"error": "Failed to connect to Laravel", "exists": False}
-    except Exception as e:
+    except requests.exceptions.RequestException as e:
         return {"error": str(e), "exists": False}
 
-# Start detection loop
-threading.Thread(target=detect_loop, daemon=True).start()
+if __name__ == '__main__':
+    threading.Thread(target=detect_loop, daemon=True).start()
+    app.run(host='0.0.0.0', port=5000, debug=False)
