@@ -12,6 +12,18 @@ from detect_plate import detect_plate_image
 app = Flask(__name__)
 CORS(app)
 
+@app.route('/', methods=['GET'])
+def home():
+    return jsonify({
+        "status": "Flask API Running",
+        "endpoints": [
+            "/upload_frame [POST]",
+            "/get_processed_frame [GET]",
+            "/result [GET]",
+            "/check_plate/<plat_nomor> [GET]"
+        ]
+    })
+
 MODEL_PATH = os.path.join(os.path.dirname(__file__), 'best.pt')
 if not os.path.exists(MODEL_PATH):
     raise FileNotFoundError(f"❌ Model not found at: {MODEL_PATH}")
