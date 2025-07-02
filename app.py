@@ -38,6 +38,8 @@ def detect_loop():
     last_result = "-"
     first_detection_logged = False
 
+    print("[INFO] detect_loop berjalan...")
+
     while True:
         frame_copy = None
         with lock:
@@ -46,7 +48,9 @@ def detect_loop():
 
         if frame_copy is not None:
             try:
+                print("[INFO] Memulai deteksi YOLOv8 pada frame baru...")
                 det_frame, ocr_text = detect_plate_image(frame_copy, MODEL_PATH)
+
                 with lock:
                     display_frame = det_frame
                     if ocr_text != "-" and ocr_text != last_result:
@@ -54,21 +58,27 @@ def detect_loop():
                         last_result = ocr_text
                         print(f"[INFO] Plat terdeteksi: {ocr_text}")
 
-                # Info pertama kali YOLOv8 berjalan
                 if not first_detection_logged:
                     print("✅ YOLOv8 model berhasil dijalankan dan deteksi aktif di VPS.")
                     first_detection_logged = True
 
             except Exception as e:
-                print(f"[ERROR] Gagal deteksi: {e}")
+                print(f"[ERROR] YOLOv8 gagal memproses: {e}")
 
-        time.sleep(0.1)
+        else:
+            print("[INFO] Tidak ada frame untuk diproses YOLOv8 saat ini.")
+
+        time.sleep(1)
 
 # ENCODING FRAME KE BASE64
 def frame_to_base64(frame):
-    _, buffer = cv2.imencode('.jpg', frame)
-    encoded = base64.b64encode(buffer).decode('utf-8')
-    return f"data:image/jpeg;base64,{encoded}"
+    try:
+        _, buffer = cv2.imencode('.jpg', frame)
+        encoded = base64.b64encode(buffer).decode('utf-8')
+        return f"data:image/jpeg;base64,{encoded}"
+    except Exception as e:
+        print(f"[ERROR] Gagal encode frame ke base64: {e}")
+        return None
 
 # ENDPOINT UPLOAD FRAME
 @app.route("/upload_frame", methods=["POST"])
@@ -76,10 +86,14 @@ def upload_frame():
     global raw_frame
     try:
         data = request.get_json()
-        if 'image' not in data:
+        if not data or 'image' not in data:
             return jsonify({"error": "No image provided"}), 400
 
-        image_data = data['image'].split(",")[1]
+        if "," in data['image']:
+            image_data = data['image'].split(",")[1]
+        else:
+            image_data = data['image']
+
         img_array = np.frombuffer(base64.b64decode(image_data), np.uint8)
         frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
 
@@ -89,7 +103,7 @@ def upload_frame():
         with lock:
             raw_frame = frame
 
-        print("[INFO] Frame diterima server.")
+        print("[INFO] Frame diterima server dan siap diproses YOLOv8.")
         return jsonify({"message": "Frame received successfully"}), 200
 
     except Exception as e:
@@ -101,10 +115,14 @@ def upload_frame():
 def get_processed_frame():
     with lock:
         if display_frame is None:
+            print("[INFO] Tidak ada frame hasil YOLOv8 untuk dikirim.")
             return jsonify({'error': 'No frame to send'}), 400
 
         processed_frame_base64 = frame_to_base64(display_frame)
-        return jsonify({'frame': processed_frame_base64})
+        if processed_frame_base64:
+            return jsonify({'frame': processed_frame_base64}), 200
+        else:
+            return jsonify({'error': 'Failed to encode frame'}), 500
 
 # ENDPOINT RESULT PLAT NOMOR TERBARU
 @app.route("/result", methods=["GET"])
@@ -122,6 +140,7 @@ def check_plate(plat_nomor):
         else:
             return {"error": "Laravel server unavailable", "exists": False}, 200
     except Exception as e:
+        print(f"[ERROR] Gagal cek plat ke server Laravel: {e}")
         return {"error": str(e), "exists": False}, 200
 
 # START SERVER
