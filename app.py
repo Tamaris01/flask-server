@@ -15,6 +15,8 @@ CORS(app)
 MODEL_PATH = os.path.join(os.path.dirname(__file__), 'best.pt')
 if not os.path.exists(MODEL_PATH):
     raise FileNotFoundError(f"❌ Model YOLOv8 tidak ditemukan di {MODEL_PATH}")
+else:
+    print(f"✅ Model YOLOv8 ditemukan di {MODEL_PATH}. Siap digunakan.")
 
 # STATE
 raw_frame = None
@@ -25,7 +27,8 @@ lock = threading.Lock()
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({
-        "status": "Flask YOLOv8 Server Running",
+        "status": "✅ Flask YOLOv8 Server Running",
+        "model_path": MODEL_PATH,
         "endpoints": ["/upload_frame [POST]", "/get_processed_frame [GET]", "/result [GET]", "/check_plate/<plat_nomor> [GET]"]
     })
 
@@ -33,6 +36,8 @@ def home():
 def detect_loop():
     global raw_frame, display_frame, result_text
     last_result = "-"
+    first_detection_logged = False
+
     while True:
         frame_copy = None
         with lock:
@@ -48,6 +53,12 @@ def detect_loop():
                         result_text = ocr_text
                         last_result = ocr_text
                         print(f"[INFO] Plat terdeteksi: {ocr_text}")
+
+                # Info pertama kali YOLOv8 berjalan
+                if not first_detection_logged:
+                    print("✅ YOLOv8 model berhasil dijalankan dan deteksi aktif di VPS.")
+                    first_detection_logged = True
+
             except Exception as e:
                 print(f"[ERROR] Gagal deteksi: {e}")
 
@@ -86,14 +97,14 @@ def upload_frame():
         return jsonify({"error": str(e)}), 500
 
 # ENDPOINT GET FRAME YANG SUDAH DIPROSES
-@app.route("/get_processed_frame", methods=["GET"])
+@app.route('/get_processed_frame', methods=['GET'])
 def get_processed_frame():
     with lock:
         if display_frame is None:
-            return jsonify({"error": "No frame ready"}), 200  # Tetap 200 agar client retry
+            return jsonify({'error': 'No frame to send'}), 400
 
-        encoded = frame_to_base64(display_frame)
-        return jsonify({"frame": encoded}), 200
+        processed_frame_base64 = frame_to_base64(display_frame)
+        return jsonify({'frame': processed_frame_base64})
 
 # ENDPOINT RESULT PLAT NOMOR TERBARU
 @app.route("/result", methods=["GET"])
@@ -115,5 +126,6 @@ def check_plate(plat_nomor):
 
 # START SERVER
 if __name__ == "__main__":
+    print("🚀 Memulai Flask YOLOv8 Server di VPS...")
     threading.Thread(target=detect_loop, daemon=True).start()
     app.run(host="0.0.0.0", port=5000, debug=False)
