@@ -57,10 +57,19 @@ def detect_plate_image(frame, model_path):
     # Resize agar YOLOv8 lebih stabil
     resized_frame = cv2.resize(frame, (640, 640))
 
-    # Predict YOLO
-    results = model.predict(source=resized_frame, imgsz=640, conf=0.2, verbose=False)
-    print("[DEBUG] YOLOv8 detection done")
+    try:
+        results = model.predict(
+            source=resized_frame,
+            imgsz=640,
+            conf=0.2,
+            verbose=False,
+            device="cpu"   # ✅ FORCE CPU agar stabil di VPS CPU-only
+        )
+    except Exception as e:
+        print(f"[ERROR] YOLOv8 prediction failed: {e}")
+        return frame, "-"
 
+    print("[DEBUG] YOLOv8 detection done")
     ocr_texts = []
 
     r = results[0] if isinstance(results, list) else results
