@@ -4,27 +4,25 @@ import re
 from paddleocr import PaddleOCR
 import numpy as np
 
-# Inisialisasi PaddleOCR (hanya sekali untuk efisiensi)
+# Inisialisasi PaddleOCR sekali untuk efisiensi
 ocr = PaddleOCR(use_angle_cls=True, lang='en')
 
-# Cache model YOLO agar tidak load berulang
+# Cache YOLO model agar tidak reload berulang
 model_cache = None
 
 def load_model(model_path):
     global model_cache
     if model_cache is None:
-        print(f"[INFO] Loading YOLO model from {model_path}")
+        print(f"[INFO] Loading YOLOv8 model: {model_path}")
         model_cache = YOLO(model_path)
     return model_cache
 
 def preprocess_plate(plate_img):
-    # Preprocessing untuk OCR
     gray = cv2.cvtColor(plate_img, cv2.COLOR_BGR2GRAY)
     resized = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
     return resized
 
 def format_license_plate(text):
-    # Format hasil OCR agar sesuai pola plat
     match = re.match(r'^([A-Z]{1,2})(\d{1,4})([A-Z]{1,3})?$', text)
     if match:
         part1 = match.group(1)
@@ -49,23 +47,22 @@ def extract_text_paddle(preprocessed_img):
 def detect_plate_image(frame, model_path):
     """
     frame: np.ndarray (BGR)
-    model_path: str (path to YOLO model)
+    model_path: str
     returns:
-        - frame with overlay
-        - recognized license plate text (string)
+        - frame with bounding boxes and OCR overlay
+        - recognized license plate text
     """
     model = load_model(model_path)
 
-    # Resize untuk deteksi agar cepat
-    resized_frame = cv2.resize(frame, (640, 480))
+    # Resize agar YOLOv8 lebih stabil
+    resized_frame = cv2.resize(frame, (640, 640))
 
     # Predict YOLO
-    results = model.predict(source=resized_frame, conf=0.3, verbose=False)
-    print("[DEBUG] YOLO prediction done.")
+    results = model.predict(source=resized_frame, imgsz=640, conf=0.2, verbose=False)
+    print("[DEBUG] YOLOv8 detection done")
 
     ocr_texts = []
 
-    # Handle ultralytics Results format
     r = results[0] if isinstance(results, list) else results
 
     if hasattr(r, 'boxes') and r.boxes is not None:
@@ -75,13 +72,13 @@ def detect_plate_image(frame, model_path):
 
             x1, y1, x2, y2 = map(int, xyxy)
 
-            # Filter bounding box kecil agar noise tidak terbaca
+            # Skip kotak terlalu kecil agar tidak noise
             if (x2 - x1) < 30 or (y2 - y1) < 15:
                 continue
 
             # Scaling kembali ke ukuran frame asli
             x_scale = frame.shape[1] / 640
-            y_scale = frame.shape[0] / 480
+            y_scale = frame.shape[0] / 640
 
             x1 = int(x1 * x_scale)
             x2 = int(x2 * x_scale)
@@ -94,7 +91,7 @@ def detect_plate_image(frame, model_path):
             y1 = max(0, min(frame.shape[0] - 1, y1))
             y2 = max(0, min(frame.shape[0] - 1, y2))
 
-            # Draw bounding box
+            # Draw bounding box dan label
             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
             label = f"Plate ({conf:.2f})"
             cv2.putText(frame, label, (x1, y1 - 10),
@@ -116,7 +113,7 @@ def detect_plate_image(frame, model_path):
     print(f"[INFO] OCR Result: {final_ocr}")
     return frame, final_ocr
 
-# Untuk testing lokal:
+# Testing lokal webcam
 if __name__ == "__main__":
     import sys
     model_path = sys.argv[1] if len(sys.argv) > 1 else "best.pt"
@@ -128,7 +125,7 @@ if __name__ == "__main__":
             break
 
         output_frame, ocr_result = detect_plate_image(frame, model_path)
-        cv2.imshow("YOLO Plate Detection", output_frame)
+        cv2.imshow("YOLOv8 Plate Detection", output_frame)
         print("Detected:", ocr_result)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
