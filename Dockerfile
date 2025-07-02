@@ -17,5 +17,4 @@ COPY . .
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 
-# Jalankan FastAPI menggunakan Gunicorn + Uvicorn Worker
-CMD ["gunicorn", "-w", "3", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:5000", "app:app"]
+CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:5000", "app:app"]
