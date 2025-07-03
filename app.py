@@ -139,10 +139,3 @@ def post_fork(server, worker):
     detection_thread = threading.Thread(target=detect_loop, daemon=True)
     detection_thread.start()
     print("[INFO] detect_loop seharusnya sudah berjalan sekarang.")
-
-# === Main Runner for Local Debug ===
-if __name__ == "__main__":
-    print("🚀 Memulai Flask YOLOv8 Server di VPS (mode debug, bukan Gunicorn)...")
-    detection_thread = threading.Thread(target=detect_loop, daemon=True)
-    detection_thread.start()
-    app.run(host="0.0.0.0", port=5000, debug=True)
