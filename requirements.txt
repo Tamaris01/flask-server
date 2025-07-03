@@ -7,3 +7,4 @@ paddleocr
 paddlepaddle
 requests
 ultralytics
+inference

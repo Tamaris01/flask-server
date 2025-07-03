@@ -1,85 +1,122 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify
 from flask_cors import CORS
 import cv2
-import base64
 import numpy as np
 import threading
-import time
-import os
-import requests
-
+import base64
+from paddleocr import PaddleOCR
 from inference import InferencePipeline
+import requests
 
 app = Flask(__name__)
 CORS(app)
 
-# === GLOBAL STATE ===
+# === Global State ===
 display_frame = None
 result_text = "-"
 lock = threading.Lock()
+
+# === Init PaddleOCR ===
+ocr_engine = PaddleOCR(use_angle_cls=True, lang='en')
+
+# === Utility: PaddleOCR Reader ===
+def read_plate_text(plate_img):
+    try:
+        result = ocr_engine.ocr(plate_img, cls=True)
+        for line in result:
+            for box, (text, conf) in line:
+                cleaned = ''.join(filter(str.isalnum, text.upper()))
+                if 5 <= len(cleaned) <= 10:  # Heuristic filter for plate length
+                    print(f"[INFO] OCR Detected: {cleaned}")
+                    return cleaned
+    except Exception as e:
+        print(f"[ERROR] PaddleOCR failed: {e}")
+    return None
+
+# === Utility: Frame to Base64 ===
+def frame_to_base64(frame):
+    _, buffer = cv2.imencode('.jpg', frame)
+    encoded = base64.b64encode(buffer).decode('utf-8')
+    return f"data:image/jpeg;base64,{encoded}"
 
 # === Inference Pipeline Sink ===
 def my_sink(result, video_frame):
     global display_frame, result_text
     try:
+        frame = video_frame.numpy()[:, :, ::-1].copy()  # RGB to BGR
+
+        predictions = result.get("predictions", [])
+        texts = []
+
+        for pred in predictions:
+            x_min, y_min, x_max, y_max = map(int, pred["x"], pred["y"], pred["width"], pred["height"])
+
+            # Convert center x,y,w,h to x1,y1,x2,y2 if needed
+            if "x" in pred and "y" in pred and "width" in pred and "height" in pred:
+                cx, cy, w, h = pred["x"], pred["y"], pred["width"], pred["height"]
+                x_min = int(cx - w / 2)
+                x_max = int(cx + w / 2)
+                y_min = int(cy - h / 2)
+                y_max = int(cy + h / 2)
+
+            # Clamp
+            x_min = max(0, x_min)
+            y_min = max(0, y_min)
+            x_max = min(frame.shape[1] - 1, x_max)
+            y_max = min(frame.shape[0] - 1, y_max)
+
+            cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
+
+            plate_crop = frame[y_min:y_max, x_min:x_max]
+            if plate_crop.size == 0:
+                continue
+
+            text = read_plate_text(plate_crop)
+            if text:
+                texts.append(text)
+                cv2.putText(frame, text, (x_min, y_max + 20),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
+
         with lock:
-            if result.get("output_image"):
-                # Convert SDK Image to OpenCV BGR
-                display_frame = result["output_image"].numpy_image
-            if "predictions" in result:
-                result_text = str(result["predictions"])
-        print("[INFO] Frame processed, prediction updated.")
+            display_frame = frame.copy()
+            result_text = ', '.join(texts) if texts else "-"
     except Exception as e:
         print(f"[ERROR] my_sink: {e}")
 
-# === Pipeline Initialization ===
+# === Initialize Pipeline ===
 def init_pipeline():
-    global pipeline
     print("[INFO] Initializing Inference Pipeline...")
     pipeline = InferencePipeline.init_with_workflow(
-        api_key="1kkhDoupMwdi62nboV3L",
+       api_key="1kkhDoupMwdi62nboV3L",
         workspace_name="tama-av3ne",
         workflow_id="detect-count-and-visualize-2",
-        video_reference=0,  # webcam, or "rtsp://..."
-        max_fps=15,
+        video_reference=0, # Path to video, device id (int, usually 0 for built in webcams), or RTSP stream url
+        max_fps=30,
         on_prediction=my_sink
     )
     pipeline.start()
-    print("[INFO] Inference Pipeline started and running.")
-
-# === Utility ===
-def frame_to_base64(frame):
-    try:
-        _, buffer = cv2.imencode('.jpg', frame)
-        encoded = base64.b64encode(buffer).decode('utf-8')
-        return f"data:image/jpeg;base64,{encoded}"
-    except Exception as e:
-        print(f"[ERROR] Failed to encode frame: {e}")
-        return None
+    print("[INFO] Inference Pipeline started.")
 
 # === Routes ===
-@app.route("/", methods=["GET"])
+@app.route("/")
 def home():
     return jsonify({
-        "status": "✅ Flask Inference Pipeline Server Running",
-        "endpoints": ["/get_processed_frame [GET]", "/result [GET]"]
+        "status": "✅ Flask SDK Pipeline with PaddleOCR running",
+        "endpoints": ["/get_processed_frame", "/result"]
     })
 
-@app.route("/get_processed_frame", methods=["GET"])
-def get_processed_frame():
+@app.route("/get_processed_frame")
+def get_frame():
     with lock:
         if display_frame is None:
-            return jsonify({'error': 'No frame processed yet'}), 400
-        encoded_frame = frame_to_base64(display_frame)
-        if encoded_frame:
-            return jsonify({'frame': encoded_frame}), 200
-        else:
-            return jsonify({'error': 'Failed to encode frame'}), 500
+            return jsonify({"error": "No frame yet"}), 400
+        encoded = frame_to_base64(display_frame)
+        return jsonify({"frame": encoded})
 
-@app.route("/result", methods=["GET"])
+@app.route("/result")
 def result():
     with lock:
-        return jsonify({"prediction": result_text}), 200
+        return jsonify({"text": result_text})
 @app.route("/check_plate/<plat_nomor>", methods=["GET"])
 def check_plate(plat_nomor):
     try:
@@ -93,12 +130,5 @@ def check_plate(plat_nomor):
         return {"error": str(e), "exists": False}, 200
 # === Gunicorn Hook ===
 def post_fork(server, worker):
-    print("[INFO] post_fork Gunicorn triggered, starting pipeline thread...")
-    pipeline_thread = threading.Thread(target=init_pipeline, daemon=True)
-    pipeline_thread.start()
-    print("[INFO] Inference Pipeline should now be running.")
+    threading.Thread(target=init_pipeline, daemon=True).start()
 
-# === Local Dev Run ===
-if __name__ == "__main__":
-    init_pipeline()  # Local dev auto-run pipeline
-    app.run(host="0.0.0.0", port=5000, debug=False)
