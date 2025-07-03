@@ -66,7 +66,7 @@ def detect_loop():
             except Exception as e:
                 print(f"[ERROR] YOLOv8 gagal memproses: {e}")
         else:
-            time.sleep(0.5)  # Sleep lebih pendek agar responsif
+            time.sleep(0.5)
 
 # === Utility ===
 def frame_to_base64(frame):
@@ -133,9 +133,16 @@ def check_plate(plat_nomor):
         print(f"[ERROR] check_plate: {e}")
         return {"error": str(e), "exists": False}, 200
 
-# === Main Runner ===
+# === Gunicorn Hook for YOLOv8 ===
+def post_fork(server, worker):
+    print("[INFO] post_fork Gunicorn dipanggil, memulai YOLOv8 detect_loop...")
+    detection_thread = threading.Thread(target=detect_loop, daemon=True)
+    detection_thread.start()
+    print("[INFO] detect_loop seharusnya sudah berjalan sekarang.")
+
+# === Main Runner for Local Debug ===
 if __name__ == "__main__":
-    print("🚀 Memulai Flask YOLOv8 Server di VPS...")
+    print("🚀 Memulai Flask YOLOv8 Server di VPS (mode debug, bukan Gunicorn)...")
     detection_thread = threading.Thread(target=detect_loop, daemon=True)
     detection_thread.start()
     app.run(host="0.0.0.0", port=5000, debug=True)
