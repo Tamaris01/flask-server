@@ -12,13 +12,14 @@ from detect_plate import detect_plate_image
 app = Flask(__name__)
 CORS(app)
 
+# === CONFIG ===
 MODEL_PATH = os.path.join(os.path.dirname(__file__), 'best.pt')
 if not os.path.exists(MODEL_PATH):
     raise FileNotFoundError(f"❌ Model YOLOv8 tidak ditemukan di {MODEL_PATH}")
 else:
     print(f"✅ Model YOLOv8 ditemukan di {MODEL_PATH}. Siap digunakan.")
 
-# STATE
+# === GLOBAL STATE ===
 raw_frame = None
 display_frame = None
 result_text = "-"
@@ -32,12 +33,11 @@ def home():
         "endpoints": ["/upload_frame [POST]", "/get_processed_frame [GET]", "/result [GET]", "/check_plate/<plat_nomor> [GET]"]
     })
 
-# THREAD LOOP YOLOv8 DETEKSI
+# === YOLOv8 Detection Loop ===
 def detect_loop():
     global raw_frame, display_frame, result_text
     last_result = "-"
     first_detection_logged = False
-
     print("[INFO] detect_loop berjalan...")
 
     while True:
@@ -45,6 +45,7 @@ def detect_loop():
         with lock:
             if raw_frame is not None:
                 frame_copy = raw_frame.copy()
+                raw_frame = None  # Clear after taking
 
         if frame_copy is not None:
             try:
@@ -59,18 +60,15 @@ def detect_loop():
                         print(f"[INFO] Plat terdeteksi: {ocr_text}")
 
                 if not first_detection_logged:
-                    print("✅ YOLOv8 model berhasil dijalankan dan deteksi aktif di VPS.")
+                    print("✅ YOLOv8 model berjalan dan deteksi aktif.")
                     first_detection_logged = True
 
             except Exception as e:
                 print(f"[ERROR] YOLOv8 gagal memproses: {e}")
-
         else:
-            print("[INFO] Tidak ada frame untuk diproses YOLOv8 saat ini.")
+            time.sleep(0.5)  # Sleep lebih pendek agar responsif
 
-        time.sleep(1)
-
-# ENCODING FRAME KE BASE64
+# === Utility ===
 def frame_to_base64(frame):
     try:
         _, buffer = cv2.imencode('.jpg', frame)
@@ -80,7 +78,7 @@ def frame_to_base64(frame):
         print(f"[ERROR] Gagal encode frame ke base64: {e}")
         return None
 
-# ENDPOINT UPLOAD FRAME
+# === Endpoints ===
 @app.route("/upload_frame", methods=["POST"])
 def upload_frame():
     global raw_frame
@@ -89,11 +87,7 @@ def upload_frame():
         if not data or 'image' not in data:
             return jsonify({"error": "No image provided"}), 400
 
-        if "," in data['image']:
-            image_data = data['image'].split(",")[1]
-        else:
-            image_data = data['image']
-
+        image_data = data['image'].split(",")[-1]
         img_array = np.frombuffer(base64.b64decode(image_data), np.uint8)
         frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
 
@@ -103,34 +97,30 @@ def upload_frame():
         with lock:
             raw_frame = frame
 
-        print("[INFO] Frame diterima server dan siap diproses YOLOv8.")
+        print("[INFO] Frame diterima dan siap diproses YOLOv8.")
         return jsonify({"message": "Frame received successfully"}), 200
 
     except Exception as e:
-        print(f"[ERROR] Upload frame: {e}")
+        print(f"[ERROR] upload_frame: {e}")
         return jsonify({"error": str(e)}), 500
 
-# ENDPOINT GET FRAME YANG SUDAH DIPROSES
 @app.route('/get_processed_frame', methods=['GET'])
 def get_processed_frame():
     with lock:
         if display_frame is None:
-            print("[INFO] Tidak ada frame hasil YOLOv8 untuk dikirim.")
-            return jsonify({'error': 'No frame to send'}), 400
+            return jsonify({'error': 'No frame processed yet'}), 400
 
-        processed_frame_base64 = frame_to_base64(display_frame)
-        if processed_frame_base64:
-            return jsonify({'frame': processed_frame_base64}), 200
+        encoded_frame = frame_to_base64(display_frame)
+        if encoded_frame:
+            return jsonify({'frame': encoded_frame}), 200
         else:
             return jsonify({'error': 'Failed to encode frame'}), 500
 
-# ENDPOINT RESULT PLAT NOMOR TERBARU
 @app.route("/result", methods=["GET"])
 def result():
     with lock:
         return jsonify({"plat_nomor": result_text}), 200
 
-# ENDPOINT CEK PLAT NOMOR KE SERVER LARAVEL
 @app.route("/check_plate/<plat_nomor>", methods=["GET"])
 def check_plate(plat_nomor):
     try:
@@ -140,11 +130,12 @@ def check_plate(plat_nomor):
         else:
             return {"error": "Laravel server unavailable", "exists": False}, 200
     except Exception as e:
-        print(f"[ERROR] Gagal cek plat ke server Laravel: {e}")
+        print(f"[ERROR] check_plate: {e}")
         return {"error": str(e), "exists": False}, 200
 
-# START SERVER
+# === Main Runner ===
 if __name__ == "__main__":
     print("🚀 Memulai Flask YOLOv8 Server di VPS...")
-    threading.Thread(target=detect_loop, daemon=True).start()
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    detection_thread = threading.Thread(target=detect_loop, daemon=True)
+    detection_thread.start()
+    app.run(host="0.0.0.0", port=5000, debug=True)
