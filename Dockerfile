@@ -23,10 +23,11 @@ COPY . .
 # Upgrade pip
 RUN pip install --upgrade pip
 
-# Install dependencies Python (requirements, paddleocr, inference[transformers])
+# Install dependencies Python dari requirements.txt dan SDK YOLO opsional
 RUN pip install --no-cache-dir -r requirements.txt \
-    paddleocr paddlepaddle \
-    'inference[transformers]'
+    paddleocr \
+    'inference[transformers]' \
+    'inference[grounding-dino]'
 
 # Suppress inference SDK multimodal model warnings agar log bersih
 ENV PALIGEMMA_ENABLED=False
