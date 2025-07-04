@@ -26,21 +26,17 @@ RUN pip install --upgrade pip
 # Install PaddlePaddle eksplisit agar PaddleOCR berjalan stabil
 RUN pip install paddlepaddle
 
-# Install dependencies Python dari requirements.txt dan YOLO SDK opsional
+# Install semua dependencies YOLO SDK + PaddleOCR
 RUN pip install --no-cache-dir -r requirements.txt \
     paddleocr \
     'inference[transformers]' \
     'inference[grounding-dino]' \
-    'inference[yolo-world]'
-
-# Suppress inference SDK multimodal model warnings agar log bersih
-ENV PALIGEMMA_ENABLED=False
-ENV FLORENCE2_ENABLED=False
-ENV QWEN_2_5_ENABLED=False
-ENV CORE_MODEL_YOLO_WORLD_ENABLED=False
+    'inference[yolo-world]' \
+    'inference[sam]' \
+    'inference[gaze]'
 
 # Agar log keluar real-time
 ENV PYTHONUNBUFFERED=1
 
-# Jalankan server menggunakan Gunicorn
-CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:5000", "app:app"]
+# Jalankan server menggunakan Gunicorn dengan post_fork agar pipeline YOLO berjalan otomatis
+CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:5000", "app:app", "--post-fork=app:post_fork"]
