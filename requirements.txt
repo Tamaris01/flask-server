@@ -1,9 +1,8 @@
 flask
 flask-cors
-opencv-python-headless
-numpy
-paddleocr
-paddlepaddle
-inference
-requests
 gunicorn
+numpy
+opencv-python-headless
+requests
+inference
+paddleocr

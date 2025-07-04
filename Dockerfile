@@ -23,16 +23,18 @@ COPY . .
 # Upgrade pip
 RUN pip install --upgrade pip
 
-# Install dependencies dari requirements.txt tanpa cache
-RUN pip install --no-cache-dir -r requirements.txt
+# Install dependencies Python (requirements, paddleocr, inference[transformers])
+RUN pip install --no-cache-dir -r requirements.txt \
+    paddleocr paddlepaddle \
+    'inference[transformers]'
 
-# Install PaddleOCR + PaddlePaddle jika belum dicantumkan di requirements.txt
-RUN pip install --no-cache-dir paddleocr paddlepaddle
-
-# Suppress inference SDK warnings untuk multimodal models agar log bersih
+# Suppress inference SDK multimodal model warnings agar log bersih
 ENV PALIGEMMA_ENABLED=False
 ENV FLORENCE2_ENABLED=False
 ENV QWEN_2_5_ENABLED=False
+
+# Agar log keluar real-time
+ENV PYTHONUNBUFFERED=1
 
 # Jalankan server menggunakan Gunicorn
 CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:5000", "app:app"]
