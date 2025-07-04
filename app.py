@@ -111,7 +111,7 @@ def get_frame():
 @app.route("/result")
 def result():
     with lock:
-        return jsonify({"text": result_text})
+        return jsonify({"plat_nomor": result_text})
 
 @app.route("/check_plate/<plat_nomor>", methods=["GET"])
 def check_plate(plat_nomor):
