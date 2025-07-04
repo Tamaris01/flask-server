@@ -23,16 +23,21 @@ COPY . .
 # Upgrade pip
 RUN pip install --upgrade pip
 
-# Install dependencies Python dari requirements.txt dan SDK YOLO opsional
+# Install PaddlePaddle eksplisit agar PaddleOCR berjalan stabil
+RUN pip install paddlepaddle
+
+# Install dependencies Python dari requirements.txt dan YOLO SDK opsional
 RUN pip install --no-cache-dir -r requirements.txt \
     paddleocr \
     'inference[transformers]' \
-    'inference[grounding-dino]'
+    'inference[grounding-dino]' \
+    'inference[yolo-world]'
 
 # Suppress inference SDK multimodal model warnings agar log bersih
 ENV PALIGEMMA_ENABLED=False
 ENV FLORENCE2_ENABLED=False
 ENV QWEN_2_5_ENABLED=False
+ENV CORE_MODEL_YOLO_WORLD_ENABLED=False
 
 # Agar log keluar real-time
 ENV PYTHONUNBUFFERED=1
