@@ -39,4 +39,4 @@ RUN pip install --no-cache-dir -r requirements.txt \
 ENV PYTHONUNBUFFERED=1
 
 # Jalankan server menggunakan Gunicorn dengan post_fork agar pipeline YOLO berjalan otomatis
-CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:5000", "app:app", "--post-fork=app:post_fork"]
+CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:5000", "app:app", "-c", "gunicorn_conf.py"]
