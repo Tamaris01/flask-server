@@ -1,29 +1,33 @@
-# ================= BASE =================
-FROM python:3.11-slim
+# Gunakan Python slim stabil
+FROM python:3.12-slim
 
-# ================= ENV SETUP =================
-ENV DEBIAN_FRONTEND=noninteractive
-WORKDIR /app
-
-# ================= INSTALL DEPENDENCIES =================
+# Install dependencies sistem untuk OpenCV, PaddleOCR, YOLO
 RUN apt-get update && apt-get install -y \
-    build-essential \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
-    wget \
+    libsm6 \
+    libxext6 \
+    ffmpeg \
+    build-essential \
+    python3-dev \
     git \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# ================= INSTALL PYTHON DEPENDENCIES =================
-COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+# Atur direktori kerja
+WORKDIR /app
 
-# ================= COPY APP =================
+# Salin semua file proyek
 COPY . .
 
-# ================= EXPOSE PORT =================
-EXPOSE 5000
+# Upgrade pip dan install wheel
+RUN pip install --upgrade pip wheel
 
-# ================= ENTRYPOINT =================
-CMD ["python", "app.py"]
+# Install dependensi dengan PEP517 untuk menghindari warning GPUtil
+RUN pip install --use-pep517 --no-cache-dir -r requirements.txt
+
+# Agar log keluar real-time
+ENV PYTHONUNBUFFERED=1
+
+# Jalankan Flask via Gunicorn
+CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:5000", "app:app"]

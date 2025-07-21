@@ -1,8 +1,19 @@
+# Core
 flask
-flask-cors
-gunicorn
+flask_cors
+requests
 numpy
 opencv-python-headless
-requests
-inference
+
+# YOLOv8
+ultralytics
+
+# PaddleOCR
 paddleocr
+paddlepaddle
+
+# For GPU info if needed (GPUtil)
+GPUtil
+
+# Optional: pin pip to avoid deprecation
+pip<25.3
