@@ -89,7 +89,7 @@ def result():
 @app.route('/check_plate/<plat_nomor>', methods=['GET'])
 def check_plate(plat_nomor):
     try:
-        response = requests.get(f'http://127.0.0.1:8000/api/check_plate/{plat_nomor}')
+        response = requests.get(f'https://laravel-spot-production.up.railway.app/api/check_plate/{plat_nomor}')
         if response.status_code == 200:
             return response.json()
         else:
