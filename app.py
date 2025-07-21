@@ -63,8 +63,12 @@ def upload_frame():
         if not data or 'image' not in data:
             return jsonify({'error': 'No image provided'}), 400
 
-        image_data = data['image'].split(',')[1]
-        img_array = np.frombuffer(base64.b64decode(image_data), np.uint8)
+        # ✅ Perbaikan: Cek apakah ada koma sebelum split
+        image_base64 = data['image']
+        if ',' in image_base64:
+            image_base64 = image_base64.split(',')[1]
+
+        img_array = np.frombuffer(base64.b64decode(image_base64), np.uint8)
         frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
 
         if frame is None:
