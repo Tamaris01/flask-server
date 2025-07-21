@@ -16,7 +16,7 @@ MODEL_PATH = os.path.join(os.path.dirname(__file__), 'best.pt')
 if not os.path.exists(MODEL_PATH):
     raise FileNotFoundError(f"❌ Model not found at: {MODEL_PATH}")
 
-# Global state
+# Global states
 raw_frame = None
 display_frame = None
 result_text = "-"
@@ -26,6 +26,7 @@ lock = threading.Lock()
 def detect_loop():
     global raw_frame, display_frame, result_text
     last_result = "-"
+    print("[INFO] Detection loop started.")
     while True:
         with lock:
             frame_copy = raw_frame.copy() if raw_frame is not None else None
@@ -38,7 +39,7 @@ def detect_loop():
                     if ocr_text != "-" and ocr_text != last_result:
                         result_text = ocr_text
                         last_result = ocr_text
-                        print(f"[INFO] Detected: {ocr_text}")
+                        print(f"[INFO] Detected plate: {ocr_text}")
             except Exception as e:
                 print(f"[ERROR] Detection failed: {e}")
         
@@ -54,7 +55,7 @@ def upload_frame():
     global raw_frame
     try:
         data = request.get_json()
-        if 'image' not in data:
+        if not data or 'image' not in data:
             return jsonify({'error': 'No image provided'}), 400
 
         image_data = data['image'].split(',')[1]
@@ -70,6 +71,7 @@ def upload_frame():
         return jsonify({'message': 'Frame received and processed successfully'}), 200
 
     except Exception as e:
+        print(f"[ERROR] upload_frame: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/get_processed_frame', methods=['GET'])
@@ -79,24 +81,26 @@ def get_processed_frame():
             return jsonify({'error': 'No frame to send'}), 400
 
         processed_frame_base64 = frame_to_base64(display_frame)
-        return jsonify({'frame': processed_frame_base64})
+        return jsonify({'frame': processed_frame_base64}), 200
 
 @app.route('/result', methods=['GET'])
 def result():
     with lock:
-        return jsonify({'plat_nomor': result_text})
+        return jsonify({'plat_nomor': result_text}), 200
 
 @app.route('/check_plate/<plat_nomor>', methods=['GET'])
 def check_plate(plat_nomor):
     try:
-        response = requests.get(f'http://127.0.0.1:8000/api/check_plate/{plat_nomor}')
+        response = requests.get(f'https://alpu.web.id/api/check_plate/{plat_nomor}')
         if response.status_code == 200:
-            return response.json()
+            return jsonify(response.json()), 200
         else:
-            return {"error": "Failed to connect to Laravel", "exists": False}
+            return jsonify({"error": "Failed to connect to Laravel", "exists": False}), 500
     except requests.exceptions.RequestException as e:
-        return {"error": str(e), "exists": False}
+        print(f"[ERROR] check_plate: {e}")
+        return jsonify({"error": str(e), "exists": False}), 500
 
 if __name__ == '__main__':
+    print("[INFO] Starting Flask YOLO + PaddleOCR server...")
     threading.Thread(target=detect_loop, daemon=True).start()
     app.run(host='0.0.0.0', port=5000, debug=False)
