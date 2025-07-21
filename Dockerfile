@@ -1,42 +1,29 @@
-# Gunakan image Python slim yang ringan
-FROM python:3.12-slim
+# ================= BASE =================
+FROM python:3.11-slim
 
-# Install dependencies sistem untuk OpenCV, PaddleOCR, dan YOLO SDK
-RUN apt-get update && apt-get install -y \
-    libgl1 \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    ffmpeg \
-    build-essential \
-    python3-dev \
-    git \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Atur direktori kerja
+# ================= ENV SETUP =================
+ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
 
-# Salin semua file proyek ke dalam container
+# ================= INSTALL DEPENDENCIES =================
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    wget \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# ================= INSTALL PYTHON DEPENDENCIES =================
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# ================= COPY APP =================
 COPY . .
 
-# Upgrade pip
-RUN pip install --upgrade pip
+# ================= EXPOSE PORT =================
+EXPOSE 5000
 
-# Install PaddlePaddle eksplisit agar PaddleOCR berjalan stabil
-RUN pip install paddlepaddle
-
-# Install semua dependencies YOLO SDK + PaddleOCR
-RUN pip install --no-cache-dir -r requirements.txt \
-    paddleocr \
-    'inference[transformers]' \
-    'inference[grounding-dino]' \
-    'inference[yolo-world]' \
-    'inference[sam]' \
-    'inference[gaze]'
-
-# Agar log keluar real-time
-ENV PYTHONUNBUFFERED=1
-
-# Jalankan server menggunakan Gunicorn dengan post_fork agar pipeline YOLO berjalan otomatis
-CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:5000", "app:app"]
+# ================= ENTRYPOINT =================
+CMD ["python", "app.py"]
