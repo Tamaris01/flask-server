@@ -17,3 +17,4 @@ GPUtil
 
 # Optional: pin pip to avoid deprecation
 pip<25.3
+gunicorn
