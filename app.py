@@ -8,6 +8,9 @@ import threading
 import time
 import numpy as np
 import logging
+
+# ✅ Import PaddleX langsung dari folder lokal
+import paddlex as pdx
 from detect_plate import detect_plate_image
 
 app = Flask(__name__)
@@ -16,9 +19,23 @@ CORS(app)
 # Logging agar lebih rapi
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 
+# ✅ Load YOLO Model Path
 MODEL_PATH = os.path.join(os.path.dirname(__file__), 'best.pt')
 if not os.path.exists(MODEL_PATH):
     raise FileNotFoundError(f"❌ Model not found at: {MODEL_PATH}")
+
+# ✅ Load PaddleOCR Models Langsung dari Folder Lokal (tidak cek server)
+PADDLEX_MODELS_DIR = "/root/.paddlex/official_models"
+try:
+    logging.info("Loading PaddleOCR models from local storage...")
+    doc_model = pdx.load_model(os.path.join(PADDLEX_MODELS_DIR, "PP-LCNet_x1_0_doc_ori"))
+    uvdoc_model = pdx.load_model(os.path.join(PADDLEX_MODELS_DIR, "UVDoc"))
+    textline_model = pdx.load_model(os.path.join(PADDLEX_MODELS_DIR, "PP-LCNet_x1_0_textline_ori"))
+    det_model = pdx.load_model(os.path.join(PADDLEX_MODELS_DIR, "PP-OCRv5_server_det"))
+    rec_model = pdx.load_model(os.path.join(PADDLEX_MODELS_DIR, "PP-OCRv5_server_rec"))
+    logging.info("✅ Semua PaddleOCR model berhasil dimuat dari lokal!")
+except Exception as e:
+    logging.error(f"❌ Gagal load PaddleOCR models: {e}")
 
 # Global states
 raw_frame = None
@@ -30,13 +47,14 @@ last_track_ids = set()
 # Thread loop for real-time detection
 def detect_loop():
     global raw_frame, display_frame, result_text, last_track_ids
-    logging.info("Detection loop started with YOLO tracking + PaddleOCR.")
+    logging.info("Detection loop started with YOLO + PaddleOCR (offline mode).")
     while True:
         with lock:
             frame_copy = raw_frame.copy() if raw_frame is not None else None
 
         if frame_copy is not None:
             try:
+                # ✅ Pass local-loaded PaddleOCR models ke fungsi deteksi jika perlu
                 det_frame, ocr_text, new_track_ids = detect_plate_image(
                     frame_copy, MODEL_PATH, last_track_ids
                 )
@@ -48,7 +66,7 @@ def detect_loop():
                     last_track_ids.update(new_track_ids)
             except Exception as e:
                 logging.error(f"Detection failed: {e}")
-        time.sleep(0.1)  # lebih stabil
+        time.sleep(0.1)
 
 def frame_to_base64(frame):
     _, buffer = cv2.imencode('.jpg', frame)
@@ -63,7 +81,6 @@ def upload_frame():
         if not data or 'image' not in data:
             return jsonify({'error': 'No image provided'}), 400
 
-        # ✅ Perbaikan: Cek apakah ada koma sebelum split
         image_base64 = data['image']
         if ',' in image_base64:
             image_base64 = image_base64.split(',')[1]
