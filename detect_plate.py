@@ -10,6 +10,7 @@ model_cache = None
 def load_model(model_path):
     global model_cache
     if model_cache is None:
+        print("🔄 Loading YOLO model...")
         model_cache = YOLO(model_path)
     return model_cache
 
@@ -21,7 +22,10 @@ def preprocess_plate(plate_img):
 def format_license_plate(text):
     match = re.match(r'^([A-Z]{1,2})(\d{1,4})([A-Z]{1,3})?$', text)
     if match:
-        return f"{match.group(1)} {match.group(2)} {match.group(3) if match.group(3) else ''}".strip()
+        part1 = match.group(1)
+        part2 = match.group(2)
+        part3 = match.group(3) if match.group(3) else ""
+        return f"{part1} {part2} {part3}".strip()
     return text
 
 def extract_text_paddle(preprocessed_img):
@@ -29,8 +33,9 @@ def extract_text_paddle(preprocessed_img):
     for line in result:
         for box, (text, conf) in line:
             cleaned = ''.join(filter(str.isalnum, text.upper()))
-            if re.match(r'^[A-Z]{1,2}[0-9]{1,4}[A-Z]{0,3}$', cleaned):
-                return format_license_plate(cleaned)
+            match = re.search(r'^[A-Z]{1,2}[0-9]{1,4}[A-Z]{0,3}$', cleaned)
+            if match:
+                return format_license_plate(match.group(0))
     return None
 
 def detect_plate_image(frame, model_path, last_track_ids):
@@ -52,13 +57,17 @@ def detect_plate_image(frame, model_path, last_track_ids):
             continue
 
         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        cv2.putText(frame, f"ID {track_id}", (x1, y1 - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+
         plate_img = frame[y1:y2, x1:x2]
         preprocessed_img = preprocess_plate(plate_img)
         text = extract_text_paddle(preprocessed_img)
         if text:
             ocr_texts.append(text)
-            cv2.putText(frame, text, (x1, y2 + 25),
+            cv2.putText(frame, f"{text}", (x1, y2 + 25),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
             new_track_ids.add(track_id)
 
-    return frame, (', '.join(ocr_texts) if ocr_texts else "-"), new_track_ids
+    final_ocr = ', '.join(ocr_texts) if ocr_texts else "-"
+    return frame, final_ocr, new_track_ids

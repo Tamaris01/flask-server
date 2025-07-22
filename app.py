@@ -1,26 +1,26 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-import requests
-import base64
-import cv2
-import os
 import threading
 import time
+import cv2
+import base64
 import numpy as np
 import logging
+import os
+
+# ✅ YOLO + PaddleOCR langsung
 from detect_plate import detect_plate_image
 
 app = Flask(__name__)
 CORS(app)
 
-# Logging agar lebih rapi
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 
 MODEL_PATH = os.path.join(os.path.dirname(__file__), 'best.pt')
 if not os.path.exists(MODEL_PATH):
-    raise FileNotFoundError(f"❌ Model not found at: {MODEL_PATH}")
+    raise FileNotFoundError(f"❌ Model YOLO tidak ditemukan: {MODEL_PATH}")
 
-# Global states
+# ✅ Global states
 raw_frame = None
 display_frame = None
 result_text = "-"
@@ -29,13 +29,13 @@ last_track_ids = set()
 
 def detect_loop():
     global raw_frame, display_frame, result_text, last_track_ids
-    logging.info("Detection loop started with YOLO + PaddleOCR.")
+    logging.info("✅ Detection loop started (YOLO + PaddleOCR).")
     while True:
-        try:
-            with lock:
-                frame_copy = raw_frame.copy() if raw_frame is not None else None
+        with lock:
+            frame_copy = raw_frame.copy() if raw_frame is not None else None
 
-            if frame_copy is not None:
+        if frame_copy is not None:
+            try:
                 det_frame, ocr_text, new_track_ids = detect_plate_image(
                     frame_copy, MODEL_PATH, last_track_ids
                 )
@@ -45,9 +45,8 @@ def detect_loop():
                         result_text = ocr_text
                         logging.info(f"✅ Detected plate: {ocr_text}")
                     last_track_ids.update(new_track_ids)
-
-        except Exception as e:
-            logging.error(f"❌ Detection failed: {e}")
+            except Exception as e:
+                logging.error(f"❌ Detection failed: {e}")
         time.sleep(0.1)
 
 def frame_to_base64(frame):
@@ -62,15 +61,21 @@ def upload_frame():
         if not data or 'image' not in data:
             return jsonify({'error': 'No image provided'}), 400
 
-        img_base64 = data['image'].split(',')[1] if ',' in data['image'] else data['image']
-        frame = cv2.imdecode(np.frombuffer(base64.b64decode(img_base64), np.uint8), cv2.IMREAD_COLOR)
+        image_base64 = data['image']
+        if ',' in image_base64:
+            image_base64 = image_base64.split(',')[1]
+
+        img_array = np.frombuffer(base64.b64decode(image_base64), np.uint8)
+        frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+
         if frame is None:
             return jsonify({'error': 'Failed to decode image'}), 400
 
         with lock:
             raw_frame = frame
 
-        return jsonify({'message': 'Frame received successfully'}), 200
+        logging.info("✅ Frame diterima dari client.")
+        return jsonify({'message': 'Frame received'}), 200
     except Exception as e:
         logging.error(f"upload_frame: {e}")
         return jsonify({'error': str(e)}), 500
@@ -86,15 +91,6 @@ def get_processed_frame():
 def result():
     with lock:
         return jsonify({'plat_nomor': result_text}), 200
-
-@app.route('/check_plate/<plat_nomor>', methods=['GET'])
-def check_plate(plat_nomor):
-    try:
-        response = requests.get(f'https://alpu.web.id/api/check_plate/{plat_nomor}')
-        return jsonify(response.json()) if response.status_code == 200 else jsonify({"error": "Laravel error"}), 500
-    except requests.exceptions.RequestException as e:
-        logging.error(f"check_plate: {e}")
-        return jsonify({"error": str(e), "exists": False}), 500
 
 @app.route('/health', methods=['GET'])
 def health():
