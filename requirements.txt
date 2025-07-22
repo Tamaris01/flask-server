@@ -1,14 +1,12 @@
-# Core Flask
 flask
 flask-cors
 requests
-
-# OpenCV & Numpy
 opencv-python-headless
 numpy
-
-# YOLOv8
 ultralytics
-
-# Server Production
 gunicorn
+
+# dependensi tambahan PaddleOCR
+decorator
+shapely
+scipy
