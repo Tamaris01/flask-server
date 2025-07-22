@@ -29,14 +29,13 @@ last_track_ids = set()
 
 def detect_loop():
     global raw_frame, display_frame, result_text, last_track_ids
-    logging.info("✅ Detection loop started (YOLO + PaddleOCR).")
+    logging.info("Detection loop started with YOLO + PaddleOCR.")
     while True:
-        with lock:
-            frame_copy = raw_frame.copy() if raw_frame is not None else None
+        try:
+            with lock:
+                frame_copy = raw_frame.copy() if raw_frame is not None else None
 
-        if frame_copy is not None:
-            logging.info("Processing frame...")
-            try:
+            if frame_copy is not None:
                 det_frame, ocr_text, new_track_ids = detect_plate_image(
                     frame_copy, MODEL_PATH, last_track_ids
                 )
@@ -46,8 +45,9 @@ def detect_loop():
                         result_text = ocr_text
                         logging.info(f"✅ Detected plate: {ocr_text}")
                     last_track_ids.update(new_track_ids)
-            except Exception as e:
-                logging.error(f"Detection failed: {e}")
+
+        except Exception as e:
+            logging.error(f"❌ Detection failed: {e}")
         time.sleep(0.1)
 
 def frame_to_base64(frame):
