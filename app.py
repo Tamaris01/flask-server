@@ -6,7 +6,7 @@ import numpy as np
 import threading
 import time
 import logging
-from detect_plate import detect_plate_image
+from detect_plate import detect_only, run_ocr_snapshot
 
 app = Flask(__name__)
 CORS(app)
@@ -17,14 +17,12 @@ raw_frame = None
 display_frame = None
 result_text = "-"
 lock = threading.Lock()
-last_track_ids = set()
 
 MODEL_PATH = "best.pt"
 
-def detect_loop():
-    global raw_frame, display_frame, result_text, last_track_ids
-    logging.info("🚀 Detection loop started...")
-    last_ocr_time = time.time()
+def realtime_detection_loop():
+    global raw_frame, display_frame
+    logging.info("🎥 Realtime Detection Started")
 
     while True:
         frame_copy = None
@@ -34,30 +32,39 @@ def detect_loop():
 
         if frame_copy is not None:
             try:
-                # Deteksi selalu jalan (tanpa OCR)
-                det_frame, _, new_track_ids = detect_plate_image(
-                    frame_copy, MODEL_PATH, last_track_ids, run_ocr=False
-                )
-
+                det_frame = detect_only(frame_copy, MODEL_PATH)
                 with lock:
                     display_frame = det_frame
-                    last_track_ids.update(new_track_ids)
+            except Exception as e:
+                logging.error(f"Error in realtime detection: {e}")
 
-                # Jalankan OCR hanya setiap 5 detik
-                if time.time() - last_ocr_time >= 5:
-                    _, ocr_text, _ = detect_plate_image(
-                        frame_copy, MODEL_PATH, set(), run_ocr=True
-                    )
+        time.sleep(0.05)
+
+def ocr_snapshot_loop():
+    global raw_frame, result_text
+    logging.info("📸 OCR Snapshot Loop Started")
+    last_ocr_time = time.time()
+
+    while True:
+        if time.time() - last_ocr_time >= 5:
+            frame_copy = None
+            with lock:
+                if raw_frame is not None:
+                    frame_copy = raw_frame.copy()
+
+            if frame_copy is not None:
+                try:
+                    ocr_text = run_ocr_snapshot(frame_copy, MODEL_PATH)
                     if ocr_text and ocr_text != "-":
                         with lock:
                             result_text = ocr_text
-                            logging.info(f"📸 OCR Snapshot result: {ocr_text}")
-                    last_ocr_time = time.time()
+                            logging.info(f"📌 OCR Result: {ocr_text}")
+                except Exception as e:
+                    logging.error(f"OCR snapshot failed: {e}")
 
-            except Exception as e:
-                logging.error(f"Detection failed: {e}")
+            last_ocr_time = time.time()
 
-        time.sleep(0.05)
+        time.sleep(1)
 
 def frame_to_base64(frame):
     _, buffer = cv2.imencode('.jpg', frame)
@@ -108,5 +115,6 @@ def health():
     return jsonify({"status": "ok"}), 200
 
 if __name__ == '__main__':
-    threading.Thread(target=detect_loop, daemon=True).start()
+    threading.Thread(target=realtime_detection_loop, daemon=True).start()
+    threading.Thread(target=ocr_snapshot_loop, daemon=True).start()
     app.run(host='0.0.0.0', port=5000, debug=False)
