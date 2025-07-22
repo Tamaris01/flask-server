@@ -9,7 +9,7 @@ opencv-python-headless
 ultralytics
 
 # PaddleOCR
-paddleocr
+paddleocr==2.6.1
 paddlepaddle==2.6.1
 
 # Gunicorn for production
