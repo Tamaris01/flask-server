@@ -29,21 +29,29 @@ RUN pip install --use-pep517 --no-cache-dir -r requirements.txt
 # ✅ Pre-download semua model agar tidak di-download ulang saat container start
 RUN python3 - <<EOF
 import paddlex as pdx
-try:
-    pdx.load_model('PP-LCNet_x1_0_doc_ori')
-    pdx.load_model('UVDoc')
-    pdx.load_model('PP-LCNet_x1_0_textline_ori')
-    pdx.load_model('PP-OCRv5_server_det')
-    pdx.load_model('PP-OCRv5_server_rec')
-    print("✅ All PaddleOCR models preloaded successfully!")
-except Exception as e:
-    print(f"❌ Model preload failed: {e}")
+models = [
+    'PP-LCNet_x1_0_doc_ori',
+    'UVDoc',
+    'PP-LCNet_x1_0_textline_ori',
+    'PP-OCRv5_server_det',
+    'PP-OCRv5_server_rec'
+]
+for m in models:
+    try:
+        print(f"⬇️  Preloading model: {m}")
+        pdx.load_model(m)
+        print(f"✅ Model {m} preloaded successfully!")
+    except Exception as e:
+        print(f"❌ Failed to preload {m}: {e}")
 EOF
 
-# Agar log keluar real-time
+# ✅ Atur agar PaddleX hanya menggunakan model lokal (tanpa cek ulang ke server)
+ENV PADDLEX_OFFLINE_MODE=1
+
+# ✅ Agar log keluar real-time
 ENV PYTHONUNBUFFERED=1
 
-# ✅ (Opsional) Gunakan environment khusus supaya YOLO tidak menulis ke /root/.config
+# ✅ (Opsional) YOLO tidak menulis ke /root/.config
 ENV YOLO_CONFIG_DIR=/tmp
 
 # ✅ Jalankan Flask via Gunicorn (produksi)
