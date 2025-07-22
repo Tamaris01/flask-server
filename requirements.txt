@@ -1,6 +1,6 @@
 # Core
 flask
-flask_cors
+flask-cors
 requests
 numpy
 opencv-python-headless
@@ -10,11 +10,10 @@ ultralytics
 
 # PaddleOCR
 paddleocr
-paddlepaddle
+paddlepaddle==2.6.1
 
-# For GPU info if needed (GPUtil)
-GPUtil
-
-# Optional: pin pip to avoid deprecation
-pip<25.3
+# Gunicorn for production
 gunicorn
+
+# Optional: pin pip to avoid future issues
+pip<25.3
