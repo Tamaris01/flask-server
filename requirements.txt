@@ -1,19 +1,14 @@
-# Core
+# Core Flask
 flask
 flask-cors
 requests
-numpy
+
+# OpenCV & Numpy
 opencv-python-headless
+numpy
 
 # YOLOv8
 ultralytics
 
-# PaddleOCR
-paddleocr==2.6.1
-paddlepaddle==2.6.1
-
-# Gunicorn for production
+# Server Production
 gunicorn
-
-# Optional: pin pip to avoid future issues
-pip<25.3
