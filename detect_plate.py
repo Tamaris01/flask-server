@@ -1,10 +1,12 @@
 from ultralytics import YOLO
 import cv2
 import re
+import numpy as np
 from paddleocr import PaddleOCR
 
-# Inisialisasi PaddleOCR sekali saja
-ocr = PaddleOCR(use_angle_cls=True, lang='en')
+# Inisialisasi PaddleOCR dengan konfigurasi lebih sensitif
+ocr = PaddleOCR(use_angle_cls=True, lang='en', det_db_box_thresh=0.3)
+
 _model = None
 
 def load_model(model_path):
@@ -25,7 +27,7 @@ def detect_only(frame, model_path):
         if conf < 0.3:
             continue
 
-        # Buat bounding box
+        # Gambar bounding box
         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
         cv2.putText(frame, label, (x1, y1 - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
@@ -33,8 +35,7 @@ def detect_only(frame, model_path):
     return frame
 
 # 📸 Untuk membaca plat nomor dari hasil deteksi
-
-  def run_ocr_snapshot(frame, model_path):
+def run_ocr_snapshot(frame, model_path):
     model = load_model(model_path)
     results = model.predict(source=frame, conf=0.3, verbose=False)
 
@@ -50,16 +51,20 @@ def detect_only(frame, model_path):
             if plate_crop.size == 0:
                 continue
 
+            # Preprocessing untuk OCR
             gray = cv2.cvtColor(plate_crop, cv2.COLOR_BGR2GRAY)
             resized = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+            processed = cv2.adaptiveThreshold(resized, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                              cv2.THRESH_BINARY, 11, 2)
 
-            result = ocr.ocr(resized, cls=True)
+            result = ocr.ocr(processed, cls=True)
             for line in result:
                 for box, (text, conf) in line:
                     cleaned = ''.join(filter(str.isalnum, text.upper()))
                     match = re.match(r'^[A-Z]{1,2}[0-9]{1,4}[A-Z]{0,3}$', cleaned)
                     if match:
-                        return format_license_plate(match.group(0))
+                        return format_plate(match.group(0))
+
     return "-"
 
 # 🎯 Format ulang agar jadi "BP 1234 XY"
