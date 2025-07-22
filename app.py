@@ -6,7 +6,7 @@ import numpy as np
 import threading
 import time
 import logging
-from detect_plate import detect_plate_image
+from detect_plate import detect_plate_image  # pastikan sudah pakai YOLO+PaddleOCR
 
 app = Flask(__name__)
 CORS(app)
@@ -25,8 +25,10 @@ def detect_loop():
     global raw_frame, display_frame, result_text, last_track_ids
     logging.info("🚀 Detection loop started...")
     while True:
+        frame_copy = None
         with lock:
-            frame_copy = raw_frame.copy() if raw_frame is not None else None
+            if raw_frame is not None:
+                frame_copy = raw_frame.copy()
 
         if frame_copy is not None:
             try:
@@ -35,12 +37,14 @@ def detect_loop():
                 )
                 with lock:
                     display_frame = det_frame
-                    if ocr_text != "-":
+                    if ocr_text and ocr_text != "-":
                         result_text = ocr_text
                         logging.info(f"✅ Detected plate: {ocr_text}")
                     last_track_ids.update(new_track_ids)
             except Exception as e:
                 logging.error(f"Detection failed: {e}")
+        else:
+            logging.debug("⏳ Waiting for frame...")
         time.sleep(0.1)
 
 def frame_to_base64(frame):
