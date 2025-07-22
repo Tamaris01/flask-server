@@ -12,6 +12,7 @@ def load_model(model_path):
         _model = YOLO(model_path)
     return _model
 
+# 🔍 Untuk menampilkan hasil deteksi di video streaming
 def detect_only(frame, model_path):
     model = load_model(model_path)
     results = model(frame)[0]
@@ -21,11 +22,13 @@ def detect_only(frame, model_path):
         conf = float(box.conf[0])
         if conf < 0.3:
             continue
+        # ✅ Tampilkan hanya label (tanpa ID)
         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        cv2.putText(frame, f"{label}", (x1, y1 - 10),
+        cv2.putText(frame, label, (x1, y1 - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
     return frame
 
+# 📸 Snapshot untuk OCR, tidak dipanggil di setiap frame
 def run_ocr_snapshot(frame, model_path):
     model = load_model(model_path)
     results = model(frame)[0]
