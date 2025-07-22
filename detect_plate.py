@@ -3,82 +3,72 @@ import cv2
 import re
 from paddleocr import PaddleOCR
 
+# Inisialisasi PaddleOCR sekali saja
 ocr = PaddleOCR(use_angle_cls=True, lang='en')
-model_cache = None
+_model = None
 
 def load_model(model_path):
-    global model_cache
-    if model_cache is None:
-        model_cache = YOLO(model_path)
-    return model_cache
+    global _model
+    if _model is None:
+        _model = YOLO(model_path)
+    return _model
 
-def preprocess_plate(plate_img):
-    gray = cv2.cvtColor(plate_img, cv2.COLOR_BGR2GRAY)
-    resized = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
-    return resized
-
-def format_license_plate(text):
-    match = re.match(r'^([A-Z]{1,2})(\d{1,4})([A-Z]{1,3})?$', text)
-    if match:
-        part1 = match.group(1)
-        part2 = match.group(2)
-        part3 = match.group(3) if match.group(3) else ""
-        return f"{part1} {part2} {part3}".strip()
-    return text
-
-def extract_text_paddle(preprocessed_img):
-    result = ocr.ocr(preprocessed_img, cls=True)
-    for line in result:
-        for box, (text, conf) in line:
-            cleaned = ''.join(filter(str.isalnum, text.upper()))
-            match = re.search(r'^[A-Z]{1,2}[0-9]{1,4}[A-Z]{0,3}$', cleaned)
-            if match:
-                return format_license_plate(match.group(0))
-    return None
-
-def detect_plate_image(frame, model_path):
+# 🔍 Untuk menampilkan hasil deteksi pada frame video
+def detect_only(frame, model_path):
     model = load_model(model_path)
+    results = model(frame)[0]
 
-    # Resize untuk inference cepat
-    small_frame = cv2.resize(frame, (640, 480))
-    results = model.predict(source=small_frame, conf=0.3, verbose=False)
+    for box in results.boxes:
+        x1, y1, x2, y2 = map(int, box.xyxy[0])
+        label = results.names[int(box.cls[0])]
+        conf = float(box.conf[0])
+        if conf < 0.3:
+            continue
 
-    ocr_texts = []
+        # Buat bounding box
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        cv2.putText(frame, label, (x1, y1 - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
-    for r in results:
-        for box in r.boxes:
-            x1, y1, x2, y2 = map(int, box.xyxy[0])
-            conf = float(box.conf[0])
+    return frame
 
-            # Filter ukuran kecil
-            if (x2 - x1) < 30 or (y2 - y1) < 15:
-                continue
+# 📸 Untuk membaca plat nomor dari hasil deteksi
+def run_ocr_snapshot(frame, model_path):
+    model = load_model(model_path)
+    results = model(frame)[0]
 
-            # Skala kembali ke frame asli
-            x_scale = frame.shape[1] / 640
-            y_scale = frame.shape[0] / 480
-            x1 = int(x1 * x_scale)
-            x2 = int(x2 * x_scale)
-            y1 = int(y1 * y_scale)
-            y2 = int(y2 * y_scale)
+    for box in results.boxes:
+        x1, y1, x2, y2 = map(int, box.xyxy[0])
+        conf = float(box.conf[0])
+        if conf < 0.3:
+            continue
 
-            # Gambar kotak
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            label = f"Plate ({conf:.2f})"
-            cv2.putText(frame, label, (x1, y1 - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        # Crop area yang diduga plat nomor
+        plate_crop = frame[y1:y2, x1:x2]
 
-            # Proses OCR
-            plate_img = frame[y1:y2, x1:x2]
-            if plate_img.size == 0:
-                continue
-            preprocessed_img = preprocess_plate(plate_img)
-            text = extract_text_paddle(preprocessed_img)
+        if plate_crop.size == 0:
+            continue  # skip jika crop kosong
 
-            if text:
-                ocr_texts.append(text)
-                cv2.putText(frame, f"OCR: {text}", (x1, y2 + 25),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
+        # Preprocessing gambar untuk OCR
+        gray = cv2.cvtColor(plate_crop, cv2.COLOR_BGR2GRAY)
+        resized = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
 
-    final_ocr = ', '.join(ocr_texts) if ocr_texts else "-"
-    return frame, final_ocr
+        result = ocr.ocr(resized, cls=True)
+
+        for line in result[0]:
+            text = line[1][0].upper()
+            cleaned = ''.join(filter(str.isalnum, text))
+
+            # Gunakan regex plat nomor Indonesia
+            match = re.match(r'^[A-Z]{1,2}\d{1,4}[A-Z]{0,3}$', cleaned)
+            if match:
+                return format_plate(match.group(0))
+
+    return "-"
+
+# 🎯 Format ulang agar jadi "BP 1234 XY"
+def format_plate(text):
+    match = re.match(r'^([A-Z]{1,2})(\d{1,4})([A-Z]{0,3})$', text)
+    if match:
+        return f"{match.group(1)} {match.group(2)} {match.group(3)}".strip()
+    return text
