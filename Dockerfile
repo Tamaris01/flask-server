@@ -13,12 +13,16 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+
+# ✅ Salin dan install requirements dulu
+COPY requirements.txt .
+RUN pip install --upgrade pip wheel
+RUN pip install --no-cache-dir -r requirements.txt
+
+# ✅ Baru salin semua file proyek
 COPY . .
 
-RUN pip install --upgrade pip wheel
-RUN pip install --no-cache-dir flask flask-cors requests opencv-python numpy ultralytics paddleocr paddlepaddle==2.6.1
-
-# Preload PaddleOCR agar tidak download ulang saat runtime
+# ✅ Preload PaddleOCR
 RUN python3 - <<EOF
 from paddleocr import PaddleOCR
 print("⬇️ Preloading PaddleOCR model...")
