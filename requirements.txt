@@ -1,12 +1,20 @@
+# Core
 flask
-flask-cors
+flask_cors
 requests
-opencv-python-headless
 numpy
-ultralytics
-gunicorn
+opencv-python-headless
 
-# dependensi tambahan PaddleOCR
-decorator
-shapely
-scipy
+# YOLOv8
+ultralytics
+
+# PaddleOCR
+paddleocr
+paddlepaddle
+
+# For GPU info if needed (GPUtil)
+GPUtil
+
+# Optional: pin pip to avoid deprecation
+pip<25.3
+gunicorn
