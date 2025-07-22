@@ -1,10 +1,8 @@
 from ultralytics import YOLO
 import cv2
 import re
-from paddleocr import PaddleOCR
 import numpy as np
 
-ocr = PaddleOCR(use_angle_cls=True, lang='en')
 model_cache = None
 
 def load_model(model_path):
@@ -27,7 +25,8 @@ def format_license_plate(text):
         return f"{part1} {part2} {part3}".strip()
     return text
 
-def extract_text_paddle(preprocessed_img):
+def extract_text_paddle(preprocessed_img, ocr):
+    """Gunakan OCR offline dari app.py"""
     result = ocr.ocr(preprocessed_img, cls=True)
     for line in result:
         for box, (text, conf) in line:
@@ -37,7 +36,7 @@ def extract_text_paddle(preprocessed_img):
                 return format_license_plate(match.group(0))
     return None
 
-def detect_plate_image(frame, model_path, last_track_ids):
+def detect_plate_image(frame, model_path, last_track_ids, ocr):
     model = load_model(model_path)
     results = model.track(frame, persist=True, tracker="bytetrack.yaml")
     boxes = results[0].boxes
@@ -61,7 +60,7 @@ def detect_plate_image(frame, model_path, last_track_ids):
 
         plate_img = frame[y1:y2, x1:x2]
         preprocessed_img = preprocess_plate(plate_img)
-        text = extract_text_paddle(preprocessed_img)
+        text = extract_text_paddle(preprocessed_img, ocr)
         if text:
             ocr_texts.append(text)
             cv2.putText(frame, f"{text}", (x1, y2 + 25),

@@ -9,14 +9,14 @@ import time
 import numpy as np
 import logging
 
-# ✅ Import PaddleX langsung dari folder lokal
-import paddlex as pdx
+# ✅ Import PaddleOCR langsung (offline)
+from paddleocr import PaddleOCR
 from detect_plate import detect_plate_image
 
 app = Flask(__name__)
 CORS(app)
 
-# Logging agar lebih rapi
+# Logging rapi
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 
 # ✅ Load YOLO Model Path
@@ -24,18 +24,16 @@ MODEL_PATH = os.path.join(os.path.dirname(__file__), 'best.pt')
 if not os.path.exists(MODEL_PATH):
     raise FileNotFoundError(f"❌ Model not found at: {MODEL_PATH}")
 
-# ✅ Load PaddleOCR Models Langsung dari Folder Lokal (tidak cek server)
-PADDLEX_MODELS_DIR = "/root/.paddlex/official_models"
-try:
-    logging.info("Loading PaddleOCR models from local storage...")
-    doc_model = pdx.load_model(os.path.join(PADDLEX_MODELS_DIR, "PP-LCNet_x1_0_doc_ori"))
-    uvdoc_model = pdx.load_model(os.path.join(PADDLEX_MODELS_DIR, "UVDoc"))
-    textline_model = pdx.load_model(os.path.join(PADDLEX_MODELS_DIR, "PP-LCNet_x1_0_textline_ori"))
-    det_model = pdx.load_model(os.path.join(PADDLEX_MODELS_DIR, "PP-OCRv5_server_det"))
-    rec_model = pdx.load_model(os.path.join(PADDLEX_MODELS_DIR, "PP-OCRv5_server_rec"))
-    logging.info("✅ Semua PaddleOCR model berhasil dimuat dari lokal!")
-except Exception as e:
-    logging.error(f"❌ Gagal load PaddleOCR models: {e}")
+# ✅ Load PaddleOCR sekali saja (offline mode)
+logging.info("Loading PaddleOCR model (offline mode)...")
+ocr = PaddleOCR(
+    use_angle_cls=True,
+    lang='en', 
+    det_model_dir="/root/.paddlex/official_models/PP-OCRv5_server_det",
+    rec_model_dir="/root/.paddlex/official_models/PP-OCRv5_server_rec",
+    cls_model_dir=None
+)
+logging.info("✅ PaddleOCR model loaded successfully (offline)!")
 
 # Global states
 raw_frame = None
@@ -54,9 +52,8 @@ def detect_loop():
 
         if frame_copy is not None:
             try:
-                # ✅ Pass local-loaded PaddleOCR models ke fungsi deteksi jika perlu
                 det_frame, ocr_text, new_track_ids = detect_plate_image(
-                    frame_copy, MODEL_PATH, last_track_ids
+                    frame_copy, MODEL_PATH, last_track_ids, ocr
                 )
                 with lock:
                     display_frame = det_frame
