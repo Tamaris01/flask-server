@@ -8,32 +8,17 @@ import threading
 import time
 import numpy as np
 import logging
-
-# ✅ Import PaddleOCR langsung (offline)
-from paddleocr import PaddleOCR
 from detect_plate import detect_plate_image
 
 app = Flask(__name__)
 CORS(app)
 
-# Logging rapi
+# Logging agar lebih rapi
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 
-# ✅ Load YOLO Model Path
 MODEL_PATH = os.path.join(os.path.dirname(__file__), 'best.pt')
 if not os.path.exists(MODEL_PATH):
     raise FileNotFoundError(f"❌ Model not found at: {MODEL_PATH}")
-
-# ✅ Load PaddleOCR sekali saja (offline mode)
-logging.info("Loading PaddleOCR model (offline mode)...")
-ocr = PaddleOCR(
-    use_angle_cls=True,
-    lang='en', 
-    det_model_dir="/root/.paddlex/official_models/PP-OCRv5_server_det",
-    rec_model_dir="/root/.paddlex/official_models/PP-OCRv5_server_rec",
-    cls_model_dir=None
-)
-logging.info("✅ PaddleOCR model loaded successfully (offline)!")
 
 # Global states
 raw_frame = None
@@ -42,24 +27,24 @@ result_text = "-"
 lock = threading.Lock()
 last_track_ids = set()
 
-# Thread loop for real-time detection
 def detect_loop():
     global raw_frame, display_frame, result_text, last_track_ids
-    logging.info("Detection loop started with YOLO + PaddleOCR (offline mode).")
+    logging.info("✅ Detection loop started (YOLO + PaddleOCR).")
     while True:
         with lock:
             frame_copy = raw_frame.copy() if raw_frame is not None else None
 
         if frame_copy is not None:
+            logging.info("Processing frame...")
             try:
                 det_frame, ocr_text, new_track_ids = detect_plate_image(
-                    frame_copy, MODEL_PATH, last_track_ids, ocr
+                    frame_copy, MODEL_PATH, last_track_ids
                 )
                 with lock:
                     display_frame = det_frame
                     if ocr_text != "-":
                         result_text = ocr_text
-                        logging.info(f"Detected plate: {ocr_text}")
+                        logging.info(f"✅ Detected plate: {ocr_text}")
                     last_track_ids.update(new_track_ids)
             except Exception as e:
                 logging.error(f"Detection failed: {e}")
@@ -67,8 +52,7 @@ def detect_loop():
 
 def frame_to_base64(frame):
     _, buffer = cv2.imencode('.jpg', frame)
-    encoded_frame = base64.b64encode(buffer).decode('utf-8')
-    return f"data:image/jpeg;base64,{encoded_frame}"
+    return f"data:image/jpeg;base64,{base64.b64encode(buffer).decode('utf-8')}"
 
 @app.route('/upload_frame', methods=['POST'])
 def upload_frame():
@@ -78,21 +62,15 @@ def upload_frame():
         if not data or 'image' not in data:
             return jsonify({'error': 'No image provided'}), 400
 
-        image_base64 = data['image']
-        if ',' in image_base64:
-            image_base64 = image_base64.split(',')[1]
-
-        img_array = np.frombuffer(base64.b64decode(image_base64), np.uint8)
-        frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-
+        img_base64 = data['image'].split(',')[1] if ',' in data['image'] else data['image']
+        frame = cv2.imdecode(np.frombuffer(base64.b64decode(img_base64), np.uint8), cv2.IMREAD_COLOR)
         if frame is None:
             return jsonify({'error': 'Failed to decode image'}), 400
 
         with lock:
             raw_frame = frame
 
-        return jsonify({'message': 'Frame received and processed successfully'}), 200
-
+        return jsonify({'message': 'Frame received successfully'}), 200
     except Exception as e:
         logging.error(f"upload_frame: {e}")
         return jsonify({'error': str(e)}), 500
@@ -102,8 +80,7 @@ def get_processed_frame():
     with lock:
         if display_frame is None:
             return jsonify({'error': 'No frame to send'}), 400
-        processed_frame_base64 = frame_to_base64(display_frame)
-        return jsonify({'frame': processed_frame_base64}), 200
+        return jsonify({'frame': frame_to_base64(display_frame)}), 200
 
 @app.route('/result', methods=['GET'])
 def result():
@@ -114,10 +91,7 @@ def result():
 def check_plate(plat_nomor):
     try:
         response = requests.get(f'https://alpu.web.id/api/check_plate/{plat_nomor}')
-        if response.status_code == 200:
-            return jsonify(response.json()), 200
-        else:
-            return jsonify({"error": "Failed to connect to Laravel", "exists": False}), 500
+        return jsonify(response.json()) if response.status_code == 200 else jsonify({"error": "Laravel error"}), 500
     except requests.exceptions.RequestException as e:
         logging.error(f"check_plate: {e}")
         return jsonify({"error": str(e), "exists": False}), 500
@@ -127,6 +101,5 @@ def health():
     return jsonify({"status": "ok"}), 200
 
 if __name__ == '__main__':
-    logging.info("Starting Flask YOLO + PaddleOCR server...")
     threading.Thread(target=detect_loop, daemon=True).start()
     app.run(host='0.0.0.0', port=5000, debug=False)

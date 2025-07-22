@@ -23,13 +23,19 @@ COPY . .
 # Upgrade pip dan install wheel
 RUN pip install --upgrade pip wheel
 
-# Install dependensi dengan PEP517
+# Install dependensi
 RUN pip install --use-pep517 --no-cache-dir -r requirements.txt
 
-# ✅ Pastikan model sudah di-mount dari host ke /root/.paddlex
-ENV PADDLEOCR_OFFLINE=True
-ENV PYTHONUNBUFFERED=1
-ENV YOLO_CONFIG_DIR=/tmp
+# ✅ Pre-download PaddleOCR models agar tidak di-download ulang saat runtime
+RUN python3 - <<EOF
+from paddleocr import PaddleOCR
+print("⬇️  Preloading PaddleOCR model...")
+ocr = PaddleOCR(use_angle_cls=True, lang='en')
+print("✅ PaddleOCR model preloaded successfully!")
+EOF
 
-# Jalankan Flask via Gunicorn (produksi)
+# ✅ Agar log keluar real-time
+ENV PYTHONUNBUFFERED=1
+
+# ✅ Jalankan Flask via Gunicorn (produksi)
 CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:5000", "app:app"]
